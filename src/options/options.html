@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prime Rating Glow - Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Prime Rating Glow</h1>
+        <p class="sub">Tiles on <code>amazon.co.uk/gp/video/*</code> glow red through amber to green by IMDb rating.</p>
+      </header>
+
+      <section>
+        <h2>Ratings source</h2>
+        <label class="row">
+          <input type="checkbox" id="enabled" />
+          <span>Enabled</span>
+        </label>
+
+        <label class="row">
+          <span class="label">Source</span>
+          <select id="provider">
+            <option value="dataset">Local IMDb dataset, then OMDb</option>
+            <option value="omdb">OMDb only</option>
+          </select>
+        </label>
+        <p class="hint">
+          The local dataset answers instantly with no network calls and no rate limit. OMDb is the
+          fallback for anything the dataset does not have.
+        </p>
+      </section>
+
+      <section>
+        <h2>Local IMDb dataset</h2>
+        <p id="dataset-status" class="status">Checking…</p>
+        <p class="hint">
+          Imports <code>title.ratings.tsv.gz</code> and <code>title.basics.tsv.gz</code> into
+          IndexedDB once. Roughly a gigabyte is read and a few hundred megabytes are stored, so it
+          takes a few minutes. <strong>Keep this tab open while it runs.</strong>
+          IMDb publishes these dumps for personal, non-commercial use.
+        </p>
+
+        <div class="grid">
+          <label class="row">
+            <span class="label">Minimum votes</span>
+            <input type="number" id="minVotes" min="0" max="100000" step="10" />
+          </label>
+          <p class="hint span2">
+            Titles with fewer votes are skipped, which keeps the store small. 100 is a good balance;
+            raise it to 1000 for a much smaller database that still covers the storefront.
+          </p>
+        </div>
+
+        <div class="actions">
+          <button id="import-network" type="button" class="primary">Download and import</button>
+          <button id="import-files" type="button">Import from local files…</button>
+          <button id="cancel-import" type="button" class="danger" hidden>Cancel</button>
+          <button id="clear-dataset" type="button" class="danger">Delete imported data</button>
+        </div>
+        <input type="file" id="file-ratings" accept=".tsv,.gz" hidden />
+        <input type="file" id="file-basics" accept=".tsv,.gz" hidden />
+
+        <div id="progress-wrap" hidden>
+          <div class="bar"><div id="progress-bar"></div></div>
+          <p id="progress-text" class="status"></p>
+        </div>
+      </section>
+
+      <section>
+        <h2>OMDb</h2>
+        <label class="row">
+          <span class="label">API key</span>
+          <input type="password" id="omdbApiKey" placeholder="paste your key" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="hint">
+          Stored only in this browser's extension storage. Free keys allow roughly 1000 lookups a
+          day; the extension keeps its own count and stops before the API cuts it off.
+        </p>
+        <label class="row">
+          <span class="label">Daily limit</span>
+          <input type="number" id="omdbDailyLimit" min="0" max="100000" step="50" />
+        </label>
+        <p id="omdb-status" class="status"></p>
+      </section>
+
+      <section>
+        <h2>Colour ramp</h2>
+        <div class="grid">
+          <label class="row">
+            <span class="label">Red at</span>
+            <input type="number" id="low" min="0" max="10" step="0.1" />
+          </label>
+          <label class="row">
+            <span class="label">Amber at</span>
+            <input type="number" id="mid" min="0" max="10" step="0.05" />
+          </label>
+          <label class="row">
+            <span class="label">Green at</span>
+            <input type="number" id="high" min="0" max="10" step="0.1" />
+          </label>
+          <label class="row">
+            <span class="label">Colour space</span>
+            <select id="colorSpace">
+              <option value="auto">Auto (OKLCH where supported)</option>
+              <option value="oklch">OKLCH</option>
+              <option value="hsl">HSL</option>
+            </select>
+          </label>
+        </div>
+        <div id="ramp" class="ramp" aria-hidden="true"></div>
+      </section>
+
+      <section>
+        <h2>Glow</h2>
+        <div class="grid">
+          <label class="row">
+            <span class="label">Blur</span>
+            <input type="number" id="glowBlur" min="0" max="80" step="1" />
+          </label>
+          <label class="row">
+            <span class="label">Spread</span>
+            <input type="number" id="glowSpread" min="0" max="20" step="1" />
+          </label>
+          <label class="row">
+            <span class="label">Opacity</span>
+            <input type="number" id="glowAlpha" min="0" max="1" step="0.05" />
+          </label>
+          <label class="row">
+            <input type="checkbox" id="showBadge" />
+            <span>Show the rating as a badge</span>
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Match confidence</h2>
+        <p class="hint">
+          A tile usually gives us a title and no year, so remakes are genuinely ambiguous. Rather
+          than guessing silently, uncertain matches are faded in proportion to how unsure we are.
+        </p>
+        <div class="grid">
+          <label class="row">
+            <span class="label">Draw above</span>
+            <input type="number" id="minConfidence" min="0" max="1" step="0.05" />
+          </label>
+          <label class="row">
+            <span class="label">Full strength at</span>
+            <input type="number" id="confidentAt" min="0" max="1" step="0.05" />
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Cache</h2>
+        <p id="cache-status" class="status"></p>
+        <div class="grid">
+          <label class="row">
+            <span class="label">Keep hits for (days)</span>
+            <input type="number" id="cacheTtlDays" min="1" max="365" step="1" />
+          </label>
+          <label class="row">
+            <span class="label">Keep misses for (days)</span>
+            <input type="number" id="negativeCacheTtlDays" min="1" max="90" step="1" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="clear-cache" type="button" class="danger">Clear cache</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Diagnostics</h2>
+        <label class="row">
+          <input type="checkbox" id="debug" />
+          <span>Log to the page console</span>
+        </label>
+      </section>
+
+      <footer>
+        <span id="saved" class="saved" hidden>Saved</span>
+      </footer>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

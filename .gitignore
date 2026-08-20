@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsv
+*.tsv.gz
+.DS_Store
+.env
+local/
+*.local.json

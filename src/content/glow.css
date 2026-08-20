@@ -1,0 +1,39 @@
+/*
+ * The glow itself. Kept in CSS rather than inline styles so it can be
+ * re-themed, and so the transition is declared once instead of per tile.
+ *
+ * Note: a carousel row with overflow:hidden will clip the outer halo. We
+ * deliberately do not fight that - forcing overflow or position on Prime's
+ * containers breaks their layout far more visibly than a slightly cropped glow.
+ */
+
+.pvg-tile {
+  box-shadow: 0 0 var(--pvg-blur, 18px) var(--pvg-spread, 2px) var(--pvg-color, transparent);
+  transition: box-shadow 220ms ease-out;
+  border-radius: inherit;
+}
+
+/* A match we could not pin down gets a softer edge as well as a fainter one. */
+.pvg-tile.pvg-uncertain {
+  box-shadow: 0 0 calc(var(--pvg-blur, 18px) * 0.8) var(--pvg-spread, 1px) var(--pvg-color, transparent);
+}
+
+.pvg-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font: 600 11px/1.5 "Amazon Ember", system-ui, sans-serif;
+  color: #0b0b0b;
+  background: var(--pvg-badge-color, #fff);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pvg-tile {
+    transition: none;
+  }
+}

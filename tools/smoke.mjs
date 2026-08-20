@@ -201,11 +201,28 @@ try {
     return out;
   });
 
+  // Configuring a ratings source must un-stick titles cached as misses while
+  // there was nowhere to look them up.
+  const recovery = await optionsPage.evaluate(async () => {
+    const { cache } = await import('/src/background/resolver.js');
+    await cache.load();
+    // Writes are debounced; make sure the miss has actually reached storage
+    // before asking the worker to act on it.
+    await cache.flush();
+    const before = cache.entries.has('asin:BUNKNOWN01');
+    const reply = await chrome.runtime.sendMessage({ type: 'pvg:sources-changed' });
+    // Observe the true contents, not this context's stale view.
+    await cache.reload();
+    return { before, reply, after: cache.entries.has('asin:BUNKNOWN01') };
+  });
+
   console.log('\nfailure handling');
   check('a dropped connection is reported as transient', failure.dropped?.transient === true);
   check('a dropped connection is NOT cached as a miss', failure.droppedCached === false);
   check('a genuine "not found" is a miss', failure.notFound?.miss === true);
   check('a genuine "not found" IS cached', failure.notFoundCached === true);
+  check('configuring a source clears cached misses', recovery.before === true && recovery.after === false,
+    JSON.stringify(recovery));
 
   // --- 3. The content script on a page matching the manifest pattern -------
   const page = await context.newPage();

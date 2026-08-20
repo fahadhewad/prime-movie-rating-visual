@@ -47,6 +47,21 @@ export class LookupCache {
     this.loaded = true;
   }
 
+  /**
+   * Re-read storage, discarding the in-memory view.
+   *
+   * load() is deliberately one-shot, so a long-lived worker never sees writes
+   * made by another extension context. Anything that must act on the true
+   * current contents - clearing misses after a dataset import, say - has to ask
+   * for them explicitly. Pending writes are flushed first so none are lost.
+   */
+  async reload() {
+    if (this.dirty) await this.flush();
+    this.loaded = false;
+    this.entries.clear();
+    await this.load();
+  }
+
   _ttlFor(entry) {
     const days = entry.miss ? this.settings.negativeCacheTtlDays : this.settings.cacheTtlDays;
     return days * DAY_MS;
@@ -77,6 +92,29 @@ export class LookupCache {
 
   setMiss(key) {
     this.set(key, { miss: 1 });
+  }
+
+  /**
+   * Forget every cached miss, keeping the hits.
+   *
+   * Called when the ratings sources change. A miss means "nowhere we asked had
+   * this title", which stops being true the moment a dataset is imported or a
+   * key is added - without this, a session spent with no source configured
+   * poisons every title for the length of the negative TTL.
+   */
+  clearMisses() {
+    let dropped = 0;
+    for (const [key, entry] of this.entries) {
+      if (entry?.miss) {
+        this.entries.delete(key);
+        dropped += 1;
+      }
+    }
+    if (dropped) {
+      this.dirty = true;
+      this._scheduleWrite();
+    }
+    return dropped;
   }
 
   /** Drop the oldest entries once we are over the cap. */

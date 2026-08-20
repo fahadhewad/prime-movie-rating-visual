@@ -136,6 +136,11 @@ async function refreshStatus() {
       : 'Not imported yet. Ratings will come from OMDb until you import.';
   }
 
+  const hasDataset = Boolean(meta && meta.storedTitles);
+  const hasKey = Boolean((settings.omdbApiKey || '').trim());
+  // The single most common reason for "nothing glows": nowhere to look up.
+  $('no-source').hidden = hasDataset || hasKey;
+
   const response = await chrome.runtime.sendMessage({ type: MSG.STATUS }).catch(() => null);
   if (response) {
     $('cache-status').textContent = `${(response.cacheEntries || 0).toLocaleString()} cached lookups.`;
@@ -189,8 +194,9 @@ async function runImport(ratings, basics) {
       signal: importController.signal,
     });
     invalidateDatasetMeta();
-    // Nudge the worker to re-read the dataset metadata.
-    await chrome.runtime.sendMessage({ type: MSG.STATUS }).catch(() => {});
+    // Tell the worker to re-read the dataset and forget cached misses - titles
+    // that missed before the import can be found now.
+    await chrome.runtime.sendMessage({ type: MSG.SOURCES_CHANGED }).catch(() => {});
   } catch (error) {
     $('progress-text').textContent = `Import failed: ${error.message}`;
     $('progress-wrap').hidden = false;
@@ -221,6 +227,105 @@ function pickFiles() {
   });
 }
 
+
+/**
+ * Ask the content script what it sees on an open Prime Video tab.
+ *
+ * Reported as stages, because each one fails for a different reason: no tab
+ * means the match pattern never applied, images but no titles means tile
+ * discovery needs adjusting for the current markup, and titles but no paints
+ * means the lookup side is the problem.
+ */
+async function runDiagnostics() {
+  const output = $('diagnosis');
+  output.hidden = false;
+  output.textContent = 'Looking for a Prime Video tab…';
+
+  const tabs = await chrome.tabs
+    .query({ url: ['https://*.amazon.co.uk/gp/video/*'] })
+    .catch(() => []);
+
+  if (!tabs.length) {
+    output.textContent =
+      'No Prime Video tab is open.\n\n' +
+      'Open https://www.amazon.co.uk/gp/video/storefront in another tab, leave it\n' +
+      'on screen for a moment, then run this again.';
+    return;
+  }
+
+  const lines = [];
+  for (const tab of tabs) {
+    const report = await chrome.tabs
+      .sendMessage(tab.id, { type: MSG.DIAGNOSE })
+      .catch((error) => ({ error: String(error?.message || error) }));
+
+    lines.push(`tab ${tab.id}  ${tab.url}`);
+
+    if (!report || report.error) {
+      lines.push(
+        '  content script did not answer.',
+        `  ${report?.error || 'no response'}`,
+        '  Reload that tab - a content script only attaches on page load, so a tab',
+        '  opened before the extension was installed will not have one.',
+        '',
+      );
+      continue;
+    }
+
+    const s = report.stats || {};
+    lines.push(
+      `  running ${report.running}   enabled ${report.enabled}`,
+      `  images on page       ${report.totalImages}`,
+      `  looked like tiles    ${s.discovered}`,
+      `  title extracted      ${s.described}`,
+      `  no usable title      ${s.noTitle}`,
+      `  artwork too small    ${s.tooSmall}`,
+      `  lookups requested    ${s.requested}`,
+      `  glows painted        ${s.painted}   (on page now: ${report.tiles})`,
+      `  no rating found      ${s.missed}`,
+      `  too unsure to draw   ${s.lowConfidence}`,
+      `  lookup failed        ${s.failed}`,
+    );
+
+    const samples = (s.samples || []).length ? s.samples : report.readableNow || [];
+    if (samples.length) {
+      lines.push('', '  what it read off the page:');
+      for (const sample of samples.slice(0, 6)) {
+        lines.push(
+          `    "${sample.label}"`,
+          `      -> title "${sample.title}"  year ${sample.year ?? '-'}  season ${sample.season ?? '-'}  asin ${sample.asin ?? '-'}`,
+        );
+      }
+    }
+
+    lines.push('', `  ${verdict(report)}`, '');
+  }
+
+  output.textContent = lines.join('\n');
+}
+
+/** Turn the counters into the one sentence the user actually wants. */
+function verdict(report) {
+  const s = report.stats || {};
+  if (!report.enabled) return 'VERDICT: the extension is switched off at the top of this page.';
+  if (!s.discovered) {
+    return 'VERDICT: no tiles recognised. Scroll the page so artwork is on screen and re-run; if it stays zero, tile discovery needs updating for the current markup.';
+  }
+  if (!s.described) {
+    return 'VERDICT: tiles found but no titles readable - tile discovery needs updating for the current markup.';
+  }
+  if (!s.requested) return 'VERDICT: titles read but nothing requested yet. Re-run in a moment.';
+  if (s.painted) return `VERDICT: working - ${s.painted} tiles glowing.`;
+  if (s.failed) return 'VERDICT: lookups are failing. Check the OMDb key, or import the dataset.';
+  if (s.lowConfidence) {
+    return 'VERDICT: matches found but all below the confidence floor. Lower "Draw above" under Match confidence.';
+  }
+  if (s.missed) {
+    return 'VERDICT: titles read fine, but no ratings came back. Import the dataset, or set an OMDb key.';
+  }
+  return 'VERDICT: inconclusive - re-run after scrolling the Prime tab.';
+}
+
 function wire() {
   for (const [key] of FIELDS) $(key)?.addEventListener('change', scheduleSave);
   for (const key of ['low', 'mid', 'high', 'colorSpace']) $(key)?.addEventListener('input', scheduleSave);
@@ -246,6 +351,13 @@ function wire() {
     await clearTitles();
     invalidateDatasetMeta();
     await refreshStatus();
+  });
+
+  $('diagnose').addEventListener('click', () => {
+    runDiagnostics().catch((error) => {
+      $('diagnosis').hidden = false;
+      $('diagnosis').textContent = `Diagnostics failed: ${error.message}`;
+    });
   });
 
   $('clear-cache').addEventListener('click', async () => {

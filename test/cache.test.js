@@ -125,3 +125,73 @@ test('the default scheduler works when called as a method', async () => {
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(saved?.['asin:B01']?.r, 7.7, 'the debounced write actually ran');
 });
+
+test('clearMisses drops misses and keeps hits', async () => {
+  // Regression: loading Prime with no ratings source cached every title as a
+  // miss, and the negative TTL then hid them for days - so importing the
+  // dataset appeared to do nothing at all.
+  const { cache, saved } = harness();
+  await cache.load();
+  cache.set('asin:B01', { r: 8.2 });
+  cache.setMiss('asin:B02');
+  cache.setMiss('asin:B03');
+
+  assert.equal(cache.clearMisses(), 2);
+  assert.equal(cache.get('asin:B01').r, 8.2, 'a real rating survives');
+  assert.equal(cache.get('asin:B02'), null);
+  assert.equal(cache.get('asin:B03'), null);
+
+  await cache.flush();
+  assert.deepEqual(Object.keys(saved()), ['asin:B01']);
+});
+
+test('clearMisses on a cache with no misses is a no-op', async () => {
+  const { cache } = harness();
+  await cache.load();
+  cache.set('asin:B01', { r: 8.2 });
+  assert.equal(cache.clearMisses(), 0);
+  assert.equal(cache.get('asin:B01').r, 8.2);
+});
+
+test('reload picks up writes made by another context', async () => {
+  // The service worker and the options page each hold their own instance over
+  // the same storage. load() is one-shot, so acting on the true contents has to
+  // be asked for.
+  let backing = { 'asin:B01': { r: 8.2, ts: 1_000_000 } };
+  const cache = new LookupCache({
+    storage: {
+      load: async () => ({ ...backing }),
+      save: async (data) => { backing = { ...data }; },
+    },
+    now: () => 1_000_000,
+    schedule: (fn) => { fn(); return null; },
+  });
+  await cache.load();
+  assert.equal(cache.entries.size, 1);
+
+  // Another context writes a miss straight to storage.
+  backing['asin:B02'] = { miss: 1, ts: 1_000_000 };
+  await cache.load();
+  assert.equal(cache.entries.size, 1, 'load() alone does not re-read');
+
+  await cache.reload();
+  assert.equal(cache.entries.size, 2, 'reload() does');
+  assert.equal(cache.clearMisses(), 1);
+});
+
+test('reload does not lose writes that had not been flushed', async () => {
+  let backing = {};
+  const cache = new LookupCache({
+    storage: {
+      load: async () => ({ ...backing }),
+      save: async (data) => { backing = { ...data }; },
+    },
+    now: () => 1_000_000,
+    // Never fire the debounce, so the write is still pending at reload time.
+    schedule: () => null,
+  });
+  await cache.load();
+  cache.set('asin:B01', { r: 7.1 });
+  await cache.reload();
+  assert.equal(cache.get('asin:B01')?.r, 7.1);
+});

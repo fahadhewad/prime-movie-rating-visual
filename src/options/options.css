@@ -212,3 +212,22 @@ footer {
   color: var(--accent);
   font-size: 12.5px;
 }
+
+/* Diagnostics output and the unconfigured warning. */
+.warn {
+  border-color: #d0a215;
+  background: color-mix(in srgb, var(--panel) 88%, #d0a215);
+}
+
+.report {
+  margin: 12px 0 0;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow: auto;
+}

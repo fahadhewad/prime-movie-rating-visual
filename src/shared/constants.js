@@ -8,6 +8,8 @@ export const MSG = {
   SETTINGS: 'pvg:settings',
   STATUS: 'pvg:status',
   CLEAR_CACHE: 'pvg:clear-cache',
+  DIAGNOSE: 'pvg:diagnose',
+  SOURCES_CHANGED: 'pvg:sources-changed',
 };
 
 export const STORAGE_KEYS = {

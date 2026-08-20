@@ -44,6 +44,23 @@ const painted = new Set();
 let batchTimer = null;
 let scanTimer = null;
 
+/**
+ * Running tally of what happened to every tile, so "nothing is glowing" can be
+ * answered with a stage rather than a shrug. Read by the options page.
+ */
+const stats = {
+  discovered: 0,
+  described: 0,
+  noTitle: 0,
+  tooSmall: 0,
+  requested: 0,
+  painted: 0,
+  missed: 0,
+  lowConfidence: 0,
+  failed: 0,
+  samples: [],
+};
+
 const log = (...args) => {
   if (settings.debug) console.debug('[pvg]', ...args);
 };
@@ -87,6 +104,7 @@ function scan() {
     markState(img, STATE.QUEUED);
     intersection.observe(img);
     found += 1;
+    stats.discovered += 1;
   }
   if (found) log('queued', found, 'tiles');
 }
@@ -125,6 +143,7 @@ function onIntersect(entries) {
 
 function consider(img) {
   if (looksTooSmall(img)) {
+    stats.tooSmall += 1;
     markState(img, STATE.SKIP);
     return;
   }
@@ -135,6 +154,7 @@ function consider(img) {
     // two before writing the tile off.
     const attempts = (retries.get(img) || 0) + 1;
     if (attempts > MAX_RETRIES) {
+      stats.noTitle += 1;
       markState(img, STATE.SKIP);
       return;
     }
@@ -147,6 +167,12 @@ function consider(img) {
   }
 
   markState(img, STATE.PENDING);
+  stats.described += 1;
+  // Keep a few worked examples: seeing what we read off the page is the
+  // quickest way to tell a discovery problem from a lookup problem.
+  if (stats.samples.length < 8) {
+    stats.samples.push({ label: tile.label, ...tile.request });
+  }
   pendingBatch.push(tile);
   if (pendingBatch.length >= BATCH_MAX) flushBatch();
   else scheduleFlush();
@@ -168,6 +194,7 @@ async function flushBatch() {
   if (!pendingBatch.length) return;
 
   const tiles = pendingBatch.splice(0, pendingBatch.length);
+  stats.requested += tiles.length;
   const response = await send(MSG.LOOKUP, { items: tiles.map((tile) => tile.request) });
   if (!response || response.error) {
     // Put them back in the queue rather than leaving them permanently pending.
@@ -185,14 +212,20 @@ async function flushBatch() {
 function paint(tile, result) {
   if (!result || result.miss || typeof result.rating !== 'number') {
     // A transient failure deserves another chance; a real miss does not.
-    if (result?.transient) requeue(tile.img);
-    else markState(tile.img, STATE.MISS);
+    if (result?.transient) {
+      stats.failed += 1;
+      requeue(tile.img);
+    } else {
+      stats.missed += 1;
+      markState(tile.img, STATE.MISS);
+    }
     return;
   }
 
   const confidence = typeof result.confidence === 'number' ? result.confidence : 1;
   if (confidence < settings.minConfidence) {
     log('too unsure to draw', tile.request.title, confidence.toFixed(2));
+    stats.lowConfidence += 1;
     markState(tile.img, STATE.MISS);
     return;
   }
@@ -206,6 +239,7 @@ function paint(tile, result) {
     showBadge: settings.showBadge,
   });
   painted.add(tile.card);
+  stats.painted += 1;
   markState(tile.img, STATE.DONE);
 }
 
@@ -242,6 +276,35 @@ async function start() {
   scan();
   log('watching', location.pathname, { supportsOklch });
 }
+
+/**
+ * Answer the options page's "why is nothing glowing?" probe.
+ *
+ * Re-runs discovery live so the numbers describe the page as it is now, not as
+ * it was when the script first loaded.
+ */
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== MSG.DIAGNOSE) return false;
+  const freshImages = discoverImages(document).length;
+  const readable = [];
+  for (const img of document.querySelectorAll('img')) {
+    if (readable.length >= 5) break;
+    const tile = describeTile(img);
+    if (tile) readable.push({ label: tile.label, ...tile.request });
+  }
+  sendResponse({
+    url: location.href,
+    running: !stopped,
+    enabled: settings.enabled,
+    stats: { ...stats },
+    // Anything discovery finds now that is not yet tracked is a fresh batch.
+    undiscovered: freshImages,
+    readableNow: readable,
+    totalImages: document.querySelectorAll('img').length,
+    tiles: document.querySelectorAll('.pvg-tile').length,
+  });
+  return true;
+});
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || stopped) return;

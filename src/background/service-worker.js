@@ -16,9 +16,17 @@ async function getSettings() {
   return { ...DEFAULT_SETTINGS, ...(stored[STORAGE_KEYS.settings] || {}) };
 }
 
-// The dataset may have been re-imported by the options page while we were asleep.
+/**
+ * Settings changed - the dataset may have been re-imported, and a key may have
+ * appeared. Both change what a cached miss means, so drop the misses.
+ */
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEYS.settings]) invalidateDatasetMeta();
+  if (area !== 'local' || !changes[STORAGE_KEYS.settings]) return;
+  invalidateDatasetMeta();
+  cache
+    .load()
+    .then(() => cache.clearMisses())
+    .catch(() => {});
 });
 
 const handlers = {
@@ -44,6 +52,17 @@ const handlers = {
       omdb,
       cacheEntries: cache.entries.size,
     };
+  },
+
+  /** Sent by the options page once an import finishes. */
+  async [MSG.SOURCES_CHANGED]() {
+    invalidateDatasetMeta();
+    // Read the true current cache: the misses may have been written by a
+    // context other than this worker.
+    await cache.reload();
+    const clearedMisses = cache.clearMisses();
+    await cache.flush();
+    return { clearedMisses };
   },
 
   async [MSG.CLEAR_CACHE]() {

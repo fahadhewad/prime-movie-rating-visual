@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "description": "Glows Prime Video tiles from red to green by IMDb rating, using a local dataset or OMDb.",
   "minimum_chrome_version": "116",
-  "permissions": ["storage", "unlimitedStorage"],
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
   "host_permissions": [
+    "https://*.amazon.co.uk/*",
     "https://datasets.imdbws.com/*",
     "https://www.omdbapi.com/*"
   ],
@@ -15,17 +19,28 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.amazon.co.uk/gp/video/*"],
-      "js": ["src/content/bootstrap.js"],
-      "css": ["src/content/glow.css"],
+      "matches": [
+        "https://*.amazon.co.uk/gp/video/*"
+      ],
+      "js": [
+        "src/content/bootstrap.js"
+      ],
+      "css": [
+        "src/content/glow.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/content/*", "src/shared/*"],
-      "matches": ["https://*.amazon.co.uk/*"]
+      "resources": [
+        "src/content/*",
+        "src/shared/*"
+      ],
+      "matches": [
+        "https://*.amazon.co.uk/*"
+      ]
     }
   ],
   "options_ui": {

@@ -25,11 +25,15 @@ Working, with one gap worth stating plainly.
 - OMDb, against genuine captured payloads: comma-separated vote counts, the
   en-dash series year range `2019-2026`, and the not-found envelope.
 
+- The live storefront's CSP, checked directly: the enforced policy is only
+  `upgrade-insecure-requests`, so it does not block the content script's
+  dynamic import. The restrictive policy Amazon sends is `report-only`.
+
 **Not verified:** it has never run against the live Prime Video site. The tile
 selectors are written to be resilient and are exercised against a fixture that
 mirrors Prime's structure, but the real storefront is the one thing this
 sandbox cannot reach. Expect tile discovery to be where it needs adjusting, and
-turn on `Log to the page console` in the options page if nothing glows.
+use **Run diagnostics** (below) to find out.
 
 ## Install
 
@@ -189,6 +193,48 @@ through the real pipeline, serves a fixture at the real storefront URL so the
 manifest's match pattern applies, and checks that glows actually land. Given how
 often Prime's markup changes, that is the test that matters. It skips itself
 cleanly if `playwright-core` is not installed.
+
+## Nothing is glowing?
+
+The extension does nothing until it has somewhere to look ratings up. If no
+source is configured the options page says so at the top, in a yellow panel.
+
+For anything else, open a Prime Video page in one tab, then hit **Run
+diagnostics** on the options page. It asks the content script what it can see
+and reports the stages:
+
+```
+  images on page       248
+  looked like tiles    96
+  title extracted      96
+  lookups requested    96
+  glows painted        0
+  no rating found      96
+
+  what it read off the page:
+    "Watch The Boys - Season 3 | Prime Video"
+      -> title "The Boys"  year -  season 3  asin B09BOYS001
+
+  VERDICT: titles read fine, but no ratings came back.
+           Import the dataset, or set an OMDb key.
+```
+
+Each stage fails for a different reason:
+
+- **No Prime tab found** - the tab was open before the extension was installed.
+  Reload it; content scripts only attach on page load.
+- **`looked like tiles` is 0** - scroll so artwork is on screen and re-run. Still
+  zero means tile discovery needs updating for the current markup.
+- **Tiles found, `title extracted` is 0** - discovery works but the labels moved.
+  The `what it read off the page` block shows exactly what was parsed.
+- **Titles read, nothing painted** - the lookup side. Import the dataset or set a
+  key.
+- **`too unsure to draw`** - matches were found but fell below the confidence
+  floor. Lower `Draw above` under Match confidence.
+
+Console noise on Prime Video is almost all Amazon's own telemetry being blocked
+by an ad blocker (`ERR_BLOCKED_BY_CLIENT`). This extension's messages are all
+prefixed `[pvg]`, and only appear with `Log to the page console` switched on.
 
 ## Known limits
 

@@ -13,6 +13,15 @@
         <p class="sub">Tiles on <code>amazon.co.uk/gp/video/*</code> glow red through amber to green by IMDb rating.</p>
       </header>
 
+      <section id="no-source" class="warn" hidden>
+        <h2>No ratings source yet</h2>
+        <p class="hint">
+          Nothing will glow until there is somewhere to look ratings up. Either import the local
+          IMDb dataset below, or paste an OMDb key. The dataset is the better option: no network
+          calls and no daily limit.
+        </p>
+      </section>
+
       <section>
         <h2>Ratings source</h2>
         <label class="row">
@@ -173,6 +182,14 @@
 
       <section>
         <h2>Diagnostics</h2>
+        <p class="hint">
+          Open a Prime Video page in another tab, then run this. It reports what the content script
+          found there, so "nothing is glowing" can be traced to a stage.
+        </p>
+        <div class="actions">
+          <button id="diagnose" type="button" class="primary">Run diagnostics</button>
+        </div>
+        <pre id="diagnosis" class="report" hidden></pre>
         <label class="row">
           <input type="checkbox" id="debug" />
           <span>Log to the page console</span>

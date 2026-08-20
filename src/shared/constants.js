@@ -54,6 +54,8 @@ export const DEFAULT_SETTINGS = {
   glowAlpha: 0.95,
   colorSpace: 'auto', // 'auto' | 'oklch' | 'hsl'
   showBadge: false,
+  /** Hero banners span the viewport, so their glow renders as a bar. */
+  glowHero: false,
   /** Positive results are re-checked after this long; misses expire sooner. */
   cacheTtlDays: 30,
   negativeCacheTtlDays: 3,

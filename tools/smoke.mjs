@@ -61,6 +61,7 @@ const BASICS_TSV = [
 ].join('\n');
 
 const ART = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='220'%3E%3Crect width='150' height='220' fill='%23333'/%3E%3C/svg%3E";
+const HERO_ART = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1280' height='400'%3E%3Crect width='1280' height='400' fill='%23222'/%3E%3C/svg%3E";
 
 /** Mimics the shape of a Prime storefront row: cards, detail links, alt text. */
 function fixture() {
@@ -72,16 +73,34 @@ function fixture() {
       ${year ? `<div class="meta"><span>${year}</span></div>` : ''}
     </li>`;
 
+  // A full-bleed hero, then a row of cards. The hero's container holds exactly
+  // one image, which is what used to send the card walk all the way up to it.
+  const hero = `<div class="hero"><div class="inner">
+      <a href="/detail/B09HERO001/ref=x"><img alt="Dune" src="${HERO_ART}"></a>
+    </div></div>`;
+
+  // The newer web client links to /detail/<asin> rather than /gp/video/detail/,
+  // and often leaves alt empty with the title in a label or hidden text.
+  const modern = `
+    <li data-testid="card"><a href="/detail/B09OPPN001/ref=x" aria-label="The Godfather">
+      <img alt="" src="${ART}"></a></li>
+    <li data-testid="card"><a href="/detail/B09HIDE001/ref=x">
+      <img alt="" src="${ART}"><span class="sr">The Thing</span></a></li>`;
+
   return `<!doctype html><html><head><meta charset="utf-8"><title>Prime Video</title>
     <style>body{background:#0f171e;margin:0}ul{display:flex;gap:12px;list-style:none;padding:20px}
-    li{width:150px}img{width:150px;height:220px;display:block}.meta{color:#aaa;font:12px sans-serif}</style>
+    li{width:150px}li img{width:150px;height:220px;display:block}.meta{color:#aaa;font:12px sans-serif}
+    .hero{width:100%;height:400px}.hero img{width:100%;height:400px;display:block}
+    .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style>
     </head><body>
+    ${hero}
     <ul data-testid="carousel">
       ${tile('Dune', 'B09KHFHVQ2', 2021)}
       ${tile('Watch The Boys - Season 3 | Prime Video', 'B09BOYS001', '')}
       ${tile('The Godfather', 'B09GODF001', 1972)}
       ${tile('The Thing', 'B09THING82', 1982)}
       ${tile('Nothing Anyone Has Ever Rated', 'B09NOPE001', 2020)}
+      ${modern}
     </ul>
     <div id="late"></div>
     </body></html>`;
@@ -233,7 +252,7 @@ try {
   );
   await page.goto('https://www.amazon.co.uk/gp/video/storefront');
 
-  await page.waitForFunction(() => document.querySelectorAll('.pvg-tile').length >= 4, null, {
+  await page.waitForFunction(() => document.querySelectorAll('.pvg-tile').length >= 6, null, {
     timeout: 20000,
   }).catch(() => {});
   // The glow fades in over 220ms, so computed style has to be read after the
@@ -258,11 +277,13 @@ try {
       uncertain: el.classList.contains('pvg-uncertain'),
       title: el.querySelector('img')?.alt,
       shadow: getComputedStyle(el).boxShadow,
+      width: Math.round(el.getBoundingClientRect().width),
+      artWidth: Math.round((el.querySelector('img') || el).getBoundingClientRect().width),
     })),
   );
 
   console.log('\ncontent script');
-  check('tiles are glowing', painted.length === 4, `${painted.length} painted`);
+  check('tiles are glowing', painted.length === 6, `${painted.length} painted`);
   check('no page errors', errors.length === 0, errors.join('; '));
 
   const byTitle = Object.fromEntries(painted.map((p) => [p.title, p]));
@@ -288,6 +309,22 @@ try {
     'the year in the card disambiguated the remake',
     byTitle['The Thing']?.rating === '8.2',
     `got ${byTitle['The Thing']?.rating}`,
+  );
+
+  // Regression: the newer /detail/ links were invisible to tile discovery, and
+  // a hero swallowed the glow into a bar across the page.
+  const modernPainted = await page.evaluate(() => ({
+    ariaLabelled: Boolean(document.querySelector('a[href*="B09OPPN001"]')?.closest('.pvg-tile')),
+    hiddenTitle: Boolean(document.querySelector('a[href*="B09HIDE001"]')?.closest('.pvg-tile')),
+    heroPainted: Boolean(document.querySelector('.hero.pvg-tile, .hero .pvg-tile')),
+  }));
+  check('a /detail/ link with an aria-label resolves', modernPainted.ariaLabelled);
+  check('a title in visually hidden text resolves', modernPainted.hiddenTitle);
+  check('the hero banner is left alone', modernPainted.heroPainted === false);
+  check(
+    'no glow is wider than its artwork',
+    painted.every((p) => !p.artWidth || p.width <= p.artWidth * 1.6),
+    JSON.stringify(painted.map((p) => [p.width, p.artWidth])),
   );
 
   // --- 4. Lazy-loaded tiles, the MutationObserver's whole job --------------
@@ -316,12 +353,12 @@ try {
 
   // --- 5. Second visit should be served from cache ------------------------
   await page.goto('https://www.amazon.co.uk/gp/video/storefront?again=1');
-  await page.waitForFunction(() => document.querySelectorAll('.pvg-tile').length >= 4, null, { timeout: 20000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('.pvg-tile').length >= 6, null, { timeout: 20000 }).catch(() => {});
   const cached = await page.evaluate(() =>
     [...document.querySelectorAll('.pvg-tile')].map((el) => el.title),
   );
   console.log('\ncaching');
-  check('tiles resolve again on a fresh page', cached.length === 4, `${cached.length}`);
+  check('tiles resolve again on a fresh page', cached.length === 6, `${cached.length}`);
   check('at least one came from cache', cached.some((t) => /\[cache\]/.test(t)), cached.join(' | '));
 } finally {
   await context.close();

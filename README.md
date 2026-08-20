@@ -225,6 +225,10 @@ Each stage fails for a different reason:
   Reload it; content scripts only attach on page load.
 - **`looked like tiles` is 0** - scroll so artwork is on screen and re-run. Still
   zero means tile discovery needs updating for the current markup.
+- **`hero banners skipped`** - expected. A halo around something spanning the
+  whole viewport has no outside edges to show, so it draws as a bar across the
+  page rather than a glow. Turn on `Glow the hero banner too` under Glow if you
+  want it anyway.
 - **Tiles found, `title extracted` is 0** - discovery works but the labels moved.
   The `what it read off the page` block shows exactly what was parsed.
 - **Titles read, nothing painted** - the lookup side. Import the dataset or set a
@@ -244,6 +248,7 @@ prefixed `[pvg]`, and only appear with `Log to the page console` switched on.
 - Only `amazon.co.uk/gp/video/*` matches. For `primevideo.com`, add it to
   `content_scripts[0].matches` and `web_accessible_resources[0].matches`.
 - Episode-level tiles resolve to their parent series.
+- Hero banners are skipped by default; see Glow settings.
 - Ratings shift over time; cached hits are re-checked after 30 days by default.
 
 ## Licence

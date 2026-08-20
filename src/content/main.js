@@ -19,7 +19,7 @@
 import { glowStyle } from '../shared/color.js';
 import { DEFAULT_SETTINGS, MSG } from '../shared/constants.js';
 import { applyGlow, clearGlow, getState, markState, STATE } from './glow.js';
-import { describeTile, discoverImages, looksTooSmall } from './tiles.js';
+import { describeTile, discoverImages, looksLikeHero, looksTooSmall } from './tiles.js';
 
 const SCAN_DEBOUNCE_MS = 150;
 const BATCH_DELAY_MS = 60;
@@ -53,6 +53,7 @@ const stats = {
   described: 0,
   noTitle: 0,
   tooSmall: 0,
+  heroSkipped: 0,
   requested: 0,
   painted: 0,
   missed: 0,
@@ -144,6 +145,12 @@ function onIntersect(entries) {
 function consider(img) {
   if (looksTooSmall(img)) {
     stats.tooSmall += 1;
+    markState(img, STATE.SKIP);
+    return;
+  }
+
+  if (!settings.glowHero && looksLikeHero(img)) {
+    stats.heroSkipped += 1;
     markState(img, STATE.SKIP);
     return;
   }

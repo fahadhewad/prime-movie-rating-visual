@@ -100,3 +100,21 @@ test('packing survives a vote count larger than any real film', () => {
   index.finalise();
   assert.deepEqual(index.get(1), { rating: 9.3, votes: 3_000_000 });
 });
+
+test('input in IMDb dump order is sorted correctly', () => {
+  // The real dumps are sorted lexicographically by tconst, which stops matching
+  // numeric order once ids pass seven digits: 'tt10001002' < 'tt1000102' as
+  // strings, but 10001002 > 1000102 as numbers. Verified against the live file,
+  // where numeric order first breaks around line 475,575.
+  const tconsts = ['tt0000001', 'tt1000100', 'tt10001002', 'tt1000102', 'tt10001058', 'tt9999999'];
+  const index = new RatingsIndex(4);
+  tconsts.forEach((tconst, i) => index.push(tconstToId(tconst), (i % 10) + 0.5, (i + 1) * 100));
+  assert.equal(index.sorted, false, 'dump order is not numerically sorted');
+  index.finalise();
+  for (let i = 0; i < index.length - 1; i += 1) {
+    assert.ok(index.ids[i] < index.ids[i + 1], 'ids are ascending after finalise');
+  }
+  tconsts.forEach((tconst, i) => {
+    assert.deepEqual(index.get(tconstToId(tconst)), { rating: (i % 10) + 0.5, votes: (i + 1) * 100 });
+  });
+});

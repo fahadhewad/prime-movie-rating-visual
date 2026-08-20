@@ -173,6 +173,40 @@ try {
   check('a season label finds the series', lookups.boys?.rating === 8.7);
   check('an unknown title returns nothing', lookups.missing === null);
 
+  // --- 3. Transport failures must not be cached as "no rating" -------------
+  const failure = await optionsPage.evaluate(async () => {
+    const { resolveOne, cache } = await import('/src/background/resolver.js');
+    const settings = {
+      provider: 'omdb', omdbApiKey: 'test-key', omdbDailyLimit: 1000,
+      cacheTtlDays: 30, negativeCacheTtlDays: 3, cacheMaxEntries: 500,
+    };
+    const real = window.fetch;
+    const out = {};
+    try {
+      window.fetch = async () => { throw new TypeError('Failed to fetch'); };
+      out.dropped = await resolveOne(
+        { title: 'Connection Dropped Here', year: null, season: null, asin: 'BDROPPED01' }, settings,
+      );
+      out.droppedCached = cache.entries.has('asin:BDROPPED01');
+
+      window.fetch = async () =>
+        new Response(JSON.stringify({ Response: 'False', Error: 'Movie not found!' }), { status: 200 });
+      out.notFound = await resolveOne(
+        { title: 'Genuinely Unknown Title', year: null, season: null, asin: 'BUNKNOWN01' }, settings,
+      );
+      out.notFoundCached = cache.entries.has('asin:BUNKNOWN01');
+    } finally {
+      window.fetch = real;
+    }
+    return out;
+  });
+
+  console.log('\nfailure handling');
+  check('a dropped connection is reported as transient', failure.dropped?.transient === true);
+  check('a dropped connection is NOT cached as a miss', failure.droppedCached === false);
+  check('a genuine "not found" is a miss', failure.notFound?.miss === true);
+  check('a genuine "not found" IS cached', failure.notFoundCached === true);
+
   // --- 3. The content script on a page matching the manifest pattern -------
   const page = await context.newPage();
   const errors = [];

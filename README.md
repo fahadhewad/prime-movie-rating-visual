@@ -11,6 +11,26 @@ OMDb as a fallback. Nothing is scraped.
 
 ---
 
+## Status
+
+Working, with one gap worth stating plainly.
+
+**Verified:**
+
+- 60 unit tests and 26 end-to-end checks in a real Chromium, with the extension
+  loaded and glows confirmed on the page.
+- The real IMDb dumps: all 1,707,414 rows of `title.ratings.tsv.gz` parse in
+  1.3s, ratings match reality (Shawshank 9.3, Godfather 9.2), 200k index lookups
+  in 97ms, and the vote packing has ~10x headroom against its ceiling.
+- OMDb, against genuine captured payloads: comma-separated vote counts, the
+  en-dash series year range `2019-2026`, and the not-found envelope.
+
+**Not verified:** it has never run against the live Prime Video site. The tile
+selectors are written to be resilient and are exercised against a fixture that
+mirrors Prime's structure, but the real storefront is the one thing this
+sandbox cannot reach. Expect tile discovery to be where it needs adjusting, and
+turn on `Log to the page console` in the options page if nothing glows.
+
 ## Install
 
 ```bash

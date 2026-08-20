@@ -43,6 +43,35 @@ async function spend(limit) {
   return budget;
 }
 
+/**
+ * A request that never got an answer out of OMDb.
+ *
+ * Distinct from "not found" on purpose: the resolver negative-caches a null for
+ * days, which is right for a title OMDb genuinely does not have and very wrong
+ * for a dropped connection.
+ */
+export class TransientOmdbError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TransientOmdbError';
+    this.transient = true;
+  }
+}
+
+/**
+ * Give back a lookup that never reached the API.
+ *
+ * The budget is spent before the request goes out, so without this a flaky
+ * connection burns the whole daily allowance without returning one rating.
+ */
+async function refund() {
+  const budget = await readBudget();
+  if (budget.used > 0) {
+    budget.used -= 1;
+    await writeBudget(budget);
+  }
+}
+
 /** Mark the key as spent for the rest of the UTC day. */
 async function markExhausted(reason) {
   const budget = await readBudget();
@@ -109,17 +138,26 @@ export async function lookupOmdb(request, { apiKey, dailyLimit }) {
     let response;
     try {
       response = await fetch(url, { credentials: 'omit' });
-    } catch {
-      return null;
+    } catch (error) {
+      await refund();
+      throw new TransientOmdbError(`network error: ${error?.message || error}`);
     }
     if (response.status === 401) {
       await markExhausted('invalid key');
       return null;
     }
+    // Server-side trouble says nothing about the title; do not spend or cache it.
+    if (response.status >= 500 || response.status === 429) {
+      await refund();
+      throw new TransientOmdbError(`OMDb responded ${response.status}`);
+    }
     if (!response.ok) return null;
 
     const payload = await response.json().catch(() => null);
-    if (!payload) return null;
+    if (!payload) {
+      await refund();
+      throw new TransientOmdbError('malformed response body');
+    }
 
     if (payload.Response === 'False') {
       // OMDb reports quota exhaustion in the same envelope as "not found".

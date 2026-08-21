@@ -62,6 +62,7 @@ const BASICS_TSV = [
 
 const ART = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='220'%3E%3Crect width='150' height='220' fill='%23333'/%3E%3C/svg%3E";
 const HERO_ART = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1280' height='400'%3E%3Crect width='1280' height='400' fill='%23222'/%3E%3C/svg%3E";
+const BADGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect width='24' height='24' fill='%23555'/%3E%3C/svg%3E";
 
 /** Mimics the shape of a Prime storefront row: cards, detail links, alt text. */
 function fixture() {
@@ -80,16 +81,19 @@ function fixture() {
     </div></div>`;
 
   // The newer web client links to /detail/<asin> rather than /gp/video/detail/,
-  // and often leaves alt empty with the title in a label or hidden text.
+  // and often leaves alt empty with the title in a label or hidden text. Real
+  // cards also carry an age-rating badge and a channel logo beside the artwork.
+  const badges = `<img alt="Suitable for ages 12 and older" src="${BADGE}"><img alt="prime" src="${BADGE}">`;
   const modern = `
     <li data-testid="card"><a href="/detail/B09OPPN001/ref=x" aria-label="The Godfather">
-      <img alt="" src="${ART}"></a></li>
+      <img alt="" src="${ART}">${badges}</a></li>
     <li data-testid="card"><a href="/detail/B09HIDE001/ref=x">
-      <img alt="" src="${ART}"><span class="sr">The Thing</span></a></li>`;
+      <img alt="" src="${ART}">${badges}</a><span class="sr">The Thing</span></li>`;
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Prime Video</title>
     <style>body{background:#0f171e;margin:0}ul{display:flex;gap:12px;list-style:none;padding:20px}
-    li{width:150px}li img{width:150px;height:220px;display:block}.meta{color:#aaa;font:12px sans-serif}
+    li{width:150px}li img{width:150px;height:220px;display:block}
+    li img[alt="prime"],li img[alt^="Suitable"]{width:24px;height:24px;display:inline-block}.meta{color:#aaa;font:12px sans-serif}
     .hero{width:100%;height:400px}.hero img{width:100%;height:400px;display:block}
     .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style>
     </head><body>
@@ -320,6 +324,17 @@ try {
   }));
   check('a /detail/ link with an aria-label resolves', modernPainted.ariaLabelled);
   check('a title in visually hidden text resolves', modernPainted.hiddenTitle);
+  // Regression: badges beside the artwork used to collapse the card down to the
+  // bare <img>, losing every card-level place a title could be read from.
+  check(
+    'badges beside the artwork do not hide the title',
+    modernPainted.ariaLabelled && modernPainted.hiddenTitle,
+  );
+  check(
+    'no age-rating badge is treated as a title',
+    !painted.some((p) => /suitable for|^rated /i.test(p.title || '')),
+    JSON.stringify(painted.map((p) => p.title)),
+  );
   check('the hero banner is left alone', modernPainted.heroPainted === false);
   check(
     'no glow is wider than its artwork',

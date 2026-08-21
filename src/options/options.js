@@ -274,6 +274,10 @@ async function runDiagnostics() {
     }
 
     const s = report.stats || {};
+    // Discovered tiles that have not reached the viewport yet are not failures;
+    // without naming them the counts look like they do not add up.
+    const accounted = (s.described || 0) + (s.noTitle || 0) + (s.tooSmall || 0) + (s.heroSkipped || 0);
+    const awaiting = Math.max(0, (s.discovered || 0) - accounted);
     lines.push(
       `  running ${report.running}   enabled ${report.enabled}`,
       `  images on page       ${report.totalImages}`,
@@ -282,6 +286,7 @@ async function runDiagnostics() {
       `  no usable title      ${s.noTitle}`,
       `  artwork too small    ${s.tooSmall}`,
       `  hero banners skipped ${s.heroSkipped ?? 0}`,
+      `  waiting to scroll in ${awaiting}`,
       `  lookups requested    ${s.requested}`,
       `  glows painted        ${s.painted}   (on page now: ${report.tiles})`,
       `  no rating found      ${s.missed}`,
@@ -300,14 +305,14 @@ async function runDiagnostics() {
       }
     }
 
-    lines.push('', `  ${verdict(report)}`, '');
+    lines.push('', `  ${verdict(report, awaiting)}`, '');
   }
 
   output.textContent = lines.join('\n');
 }
 
 /** Turn the counters into the one sentence the user actually wants. */
-function verdict(report) {
+function verdict(report, awaiting = 0) {
   const s = report.stats || {};
   if (!report.enabled) return 'VERDICT: the extension is switched off at the top of this page.';
   if (!s.discovered) {
@@ -317,7 +322,12 @@ function verdict(report) {
     return 'VERDICT: tiles found but no titles readable - tile discovery needs updating for the current markup.';
   }
   if (!s.requested) return 'VERDICT: titles read but nothing requested yet. Re-run in a moment.';
-  if (s.painted) return `VERDICT: working - ${s.painted} tiles glowing.`;
+  if (s.painted) {
+    const rest = awaiting
+      ? ` ${awaiting} more are waiting to be scrolled into view - only what is near the viewport is looked up.`
+      : '';
+    return `VERDICT: working - ${s.painted} tiles glowing.${rest}`;
+  }
   if (s.failed) return 'VERDICT: lookups are failing. Check the OMDb key, or import the dataset.';
   if (s.lowConfidence) {
     return 'VERDICT: matches found but all below the confidence floor. Lower "Draw above" under Match confidence.';

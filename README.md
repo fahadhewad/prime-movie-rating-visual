@@ -229,8 +229,10 @@ Each stage fails for a different reason:
   whole viewport has no outside edges to show, so it draws as a bar across the
   page rather than a glow. Turn on `Glow the hero banner too` under Glow if you
   want it anyway.
-- **Tiles found, `title extracted` is 0** - discovery works but the labels moved.
-  The `what it read off the page` block shows exactly what was parsed.
+- **Tiles found, `title extracted` is much lower** - the rest are either waiting
+  to be scrolled into view (`waiting to scroll in`) or their labels moved. The
+  `what it read off the page` block shows exactly what was parsed; anything in
+  there that is not a film name is a tile-discovery bug worth reporting.
 - **Titles read, nothing painted** - the lookup side. Import the dataset or set a
   key.
 - **`too unsure to draw`** - matches were found but fell below the confidence

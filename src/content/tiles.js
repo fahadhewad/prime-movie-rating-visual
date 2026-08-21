@@ -24,6 +24,14 @@ const CARD_SELECTOR = 'li, article, [data-testid], [data-automation-id], [role="
 const NOT_A_TITLE =
   /^(play|watch|watch now|resume|more info|details|add to watchlist|watchlist|trailer|prime|included with prime|rent or buy|buy|rent|free with ads|subscribe|top \d+|new episode)$/i;
 
+/**
+ * Age-rating badges sit inside cards and carry descriptive alt text like
+ * "Suitable for ages 12 and older", which reads exactly like a title unless it
+ * is named as not one.
+ */
+const AGE_RATING =
+  /^(?:suitable for\b|rated\b|age rating\b|certificate\b|classification\b|\d{1,2}\+$|(?:u|pg|12a?|15|18|r18|nr|tv-[a-z0-9]+)$)/i;
+
 /** Artwork is big; sprites, badges and channel logos are not. */
 const MIN_ARTWORK_PX = 60;
 
@@ -54,6 +62,9 @@ export function discoverImages(root = document) {
     const looksLikeCard = Boolean(img.closest('[data-testid], [data-automation-id], li, article'));
     if (!inDetailLink && !looksLikeCard) continue;
     const label = img.getAttribute('alt') || img.getAttribute('aria-label');
+    // An age-rating badge is inside the card and often inside its link, so it
+    // would otherwise be queued as a tile and burn a lookup on its alt text.
+    if (label && AGE_RATING.test(label.trim())) continue;
     // Without a detail link we need a label to have any chance of a match.
     if (!inDetailLink && !label) continue;
     out.push(img);
@@ -67,6 +78,51 @@ export function discoverImages(root = document) {
  * Stops at the first ancestor holding more than one image - that is a carousel
  * row, not a card - and prefers a semantic card boundary when it finds one.
  */
+/**
+ * An image whose alt text is a known non-title: an age badge, a channel logo,
+ * a "Top 10" flag. Decoration, whatever size the stylesheet gives it.
+ */
+function isDecorativeImage(candidate) {
+  const alt = (candidate.getAttribute('alt') || candidate.getAttribute('aria-label') || '').trim();
+  return Boolean(alt) && (AGE_RATING.test(alt) || NOT_A_TITLE.test(alt));
+}
+
+/**
+ * Is this image artwork, rather than a badge or a channel logo?
+ *
+ * Alt text is checked first because size is unreliable here: naturalWidth is 0
+ * until the image loads, and the fallback to the CSS-driven offsetWidth can
+ * make a 24px badge measure as large as the poster beside it.
+ */
+function isArtworkSized(candidate) {
+  if (isDecorativeImage(candidate)) return false;
+  const width = candidate.naturalWidth || candidate.offsetWidth || 0;
+  return width >= MIN_ARTWORK_PX;
+}
+
+/** Artwork images under `node`, counted only far enough to know if it is >1. */
+function artworkCount(node) {
+  let count = 0;
+  for (const candidate of node.querySelectorAll('img')) {
+    if (!isArtworkSized(candidate)) continue;
+    count += 1;
+    if (count > 1) break;
+  }
+  return count;
+}
+
+/**
+ * The semantic card an image belongs to, for reading labels out of.
+ *
+ * Deliberately separate from the glow target: a card holding a poster, an
+ * age-rating badge and a channel logo stops the glow walk immediately, and
+ * searching for a title on a bare <img> finds nothing, because an <img> has no
+ * children. The title usually lives on the card, so labels are read from here.
+ */
+export function labelScope(img) {
+  return img.closest(CARD_SELECTOR) || img.parentElement || img;
+}
+
 export function resolveCardRoot(img) {
   const artwork = img.getBoundingClientRect();
   const artworkArea = artwork.width * artwork.height;
@@ -75,8 +131,9 @@ export function resolveCardRoot(img) {
   let node = img.parentElement;
   for (let depth = 0; node && depth < 8; depth += 1) {
     if (node === document.body) break;
-    // More than one image means we have reached a row of cards, not a card.
-    if (node.querySelectorAll('img').length > 1) break;
+    // More than one *artwork* image means a row of cards, not a card. Badges
+    // and logos do not count, or every card with one would stop the walk here.
+    if (artworkCount(node) > 1) break;
     if (artworkArea > 0) {
       const rect = node.getBoundingClientRect();
       if (rect.width * rect.height > artworkArea * MAX_CARD_AREA_RATIO) break;
@@ -124,7 +181,7 @@ function labelledBy(element) {
 function usableText(value) {
   const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
   if (text.length < 2 || text.length > 200) return null;
-  if (NOT_A_TITLE.test(text)) return null;
+  if (NOT_A_TITLE.test(text) || AGE_RATING.test(text)) return null;
   return text;
 }
 
@@ -210,7 +267,9 @@ export function looksTooSmall(img) {
  */
 export function describeTile(img) {
   const card = resolveCardRoot(img);
-  const label = extractLabel(card, img);
+  // Glow the artwork, but read the title, year and ASIN from the whole card.
+  const scope = labelScope(img);
+  const label = extractLabel(scope, img) || extractLabel(card, img);
   if (!label) return null;
 
   const parsed = parseLabel(label);
@@ -222,9 +281,9 @@ export function describeTile(img) {
     label,
     request: {
       title: parsed.title,
-      year: parsed.year ?? extractYearFromCard(card),
+      year: parsed.year ?? extractYearFromCard(scope),
       season: parsed.season,
-      asin: extractAsin(card, img),
+      asin: extractAsin(scope, img),
     },
   };
 }

@@ -86,7 +86,20 @@ test('recordKeys covers primary and original titles', () => {
 });
 
 test('cacheKey prefers the ASIN because it is stable', () => {
-  assert.equal(cacheKey({ asin: 'B08KHFHVQ2', title: 'Dune', year: 2021 }), 'asin:B08KHFHVQ2');
+  assert.equal(cacheKey({ asin: 'B08KHFHVQ2', title: 'Dune', year: 2021 }), 'asin:B08KHFHVQ2|t:dune');
   assert.equal(cacheKey({ title: 'The Thing', year: 1982 }), 't:thing|y:1982');
   assert.equal(cacheKey({ title: 'The Thing' }), 't:thing|y:-');
+});
+
+test('an ASIN that no longer matches the title does not reuse the entry', () => {
+  // Regression: keyed on the ASIN alone, a recycled tile - or an ASIN read from
+  // the wrong link in a card with several - served the previous film's rating
+  // for as long as the entry lived.
+  const asin = 'B09KHFHVQ2';
+  assert.notEqual(
+    cacheKey({ asin, title: 'Dune' }),
+    cacheKey({ asin, title: 'The Godfather' }),
+  );
+  // The same tile asked for twice still hits, which is the point of the ASIN.
+  assert.equal(cacheKey({ asin, title: 'Dune' }), cacheKey({ asin, title: 'Dune', year: 2021 }));
 });

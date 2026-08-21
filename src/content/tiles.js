@@ -54,19 +54,38 @@ const MAX_ARTWORK_FRACTION = 0.55;
  * Cheap by design: this runs on every mutation batch, so it does no layout and
  * no text extraction. Anything expensive waits until the tile is on screen.
  */
-export function discoverImages(root = document) {
+export function discoverImages(root = document, tally = null) {
+  const bump = (key) => {
+    if (tally) tally[key] = (tally[key] || 0) + 1;
+  };
   const out = [];
   for (const img of root.querySelectorAll('img')) {
-    if (img.dataset.pvg) continue;
+    if (img.dataset.pvg) {
+      bump('alreadyHandled');
+      continue;
+    }
+    const label = (img.getAttribute('alt') || img.getAttribute('aria-label') || '').trim();
+    if (label && (AGE_RATING.test(label) || NOT_A_TITLE.test(label))) {
+      bump('decorative');
+      continue;
+    }
+
     const inDetailLink = Boolean(img.closest(DETAIL_LINK));
-    const looksLikeCard = Boolean(img.closest('[data-testid], [data-automation-id], li, article'));
-    if (!inDetailLink && !looksLikeCard) continue;
-    const label = img.getAttribute('alt') || img.getAttribute('aria-label');
-    // An age-rating badge is inside the card and often inside its link, so it
-    // would otherwise be queued as a tile and burn a lookup on its alt text.
-    if (label && AGE_RATING.test(label.trim())) continue;
-    // Without a detail link we need a label to have any chance of a match.
-    if (!inDetailLink && !label) continue;
+    const inCard = Boolean(img.closest(CARD_SELECTOR));
+    // Artwork-sized images count on their own: a poster with an empty alt in a
+    // container we do not recognise is still a tile, and the card around it can
+    // usually supply the title.
+    const artwork = isArtworkSized(img);
+
+    if (!inDetailLink && !inCard && !artwork) {
+      bump('notInACard');
+      continue;
+    }
+    if (!inDetailLink && !label && !artwork) {
+      bump('noLabel');
+      continue;
+    }
+    bump('accepted');
     out.push(img);
   }
   return out;

@@ -287,12 +287,26 @@ async function runDiagnostics() {
       `  artwork too small    ${s.tooSmall}`,
       `  hero banners skipped ${s.heroSkipped ?? 0}`,
       `  waiting to scroll in ${awaiting}`,
+      `  recycled by the page  ${s.recycled ?? 0}`,
       `  lookups requested    ${s.requested}`,
       `  glows painted        ${s.painted}   (on page now: ${report.tiles})`,
       `  no rating found      ${s.missed}`,
       `  too unsure to draw   ${s.lowConfidence}`,
       `  lookup failed        ${s.failed}`,
     );
+
+    const tally = report.tally || {};
+    if (Object.keys(tally).length) {
+      lines.push(
+        '',
+        '  of every image on the page, right now:',
+        `    accepted as a tile   ${tally.accepted || 0}`,
+        `    already handled      ${tally.alreadyHandled || 0}`,
+        `    badge or logo        ${tally.decorative || 0}`,
+        `    not in a card        ${tally.notInACard || 0}`,
+        `    no title to read     ${tally.noLabel || 0}`,
+      );
+    }
 
     const samples = (s.samples || []).length ? s.samples : report.readableNow || [];
     if (samples.length) {

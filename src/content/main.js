@@ -41,6 +41,8 @@ const pendingBatch = [];
 const retries = new WeakMap();
 const lookupRetries = new WeakMap();
 const painted = new Set();
+/** Which element each image's glow was applied to, so it can be undone. */
+const glowedCard = new WeakMap();
 let batchTimer = null;
 let scanTimer = null;
 
@@ -59,6 +61,7 @@ const stats = {
   missed: 0,
   lowConfidence: 0,
   failed: 0,
+  recycled: 0,
   samples: [],
 };
 
@@ -86,7 +89,42 @@ const intersection = new IntersectionObserver(onIntersect, {
   threshold: 0,
 });
 
-const mutations = new MutationObserver(() => scheduleScan());
+/**
+ * Forget everything we knew about an image whose identity just changed.
+ *
+ * Prime virtualises its rows: React keeps a pool of <img> elements and swaps
+ * their src and alt as you scroll, so the same element shows a different film
+ * minute to minute. Our state attribute would otherwise be a permanent
+ * tombstone - discovery skips anything already marked - which left recycled
+ * elements stuck with a stale glow, or no glow at all, no matter how far you
+ * scrolled.
+ */
+function recycle(img) {
+  // Mid-flight lookups are left alone; re-queuing them would just duplicate work.
+  if (getState(img) === STATE.PENDING) return;
+
+  const card = glowedCard.get(img);
+  if (card) {
+    clearGlow(card);
+    painted.delete(card);
+    glowedCard.delete(img);
+  }
+  if (img.dataset.pvg) {
+    delete img.dataset.pvg;
+    stats.recycled += 1;
+  }
+  retries.delete(img);
+  lookupRetries.delete(img);
+}
+
+const mutations = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type !== 'attributes') continue;
+    const target = record.target;
+    if (target instanceof HTMLImageElement) recycle(target);
+  }
+  scheduleScan();
+});
 
 function scheduleScan() {
   if (stopped || scanTimer) return;
@@ -246,6 +284,7 @@ function paint(tile, result) {
     showBadge: settings.showBadge,
   });
   painted.add(tile.card);
+  glowedCard.set(tile.img, tile.card);
   stats.painted += 1;
   markState(tile.img, STATE.DONE);
 }
@@ -279,7 +318,14 @@ async function start() {
     return;
   }
 
-  mutations.observe(document.body, { childList: true, subtree: true });
+  // Attributes as well as children: a recycled tile changes identity by having
+  // its src and alt rewritten in place, with no node added or removed.
+  mutations.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['src', 'alt', 'aria-label'],
+  });
   scan();
   log('watching', location.pathname, { supportsOklch });
 }
@@ -292,7 +338,8 @@ async function start() {
  */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== MSG.DIAGNOSE) return false;
-  const freshImages = discoverImages(document).length;
+  const tally = {};
+  const freshImages = discoverImages(document, tally).length;
   const readable = [];
   for (const img of document.querySelectorAll('img')) {
     if (readable.length >= 5) break;
@@ -306,6 +353,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     stats: { ...stats },
     // Anything discovery finds now that is not yet tracked is a fresh batch.
     undiscovered: freshImages,
+    tally,
     readableNow: readable,
     totalImages: document.querySelectorAll('img').length,
     tiles: document.querySelectorAll('.pvg-tile').length,

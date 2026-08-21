@@ -219,12 +219,20 @@ and reports the stages:
            Import the dataset, or set an OMDb key.
 ```
 
+The report also breaks down every image on the page by why it was or was not
+taken as a tile - accepted, already handled, badge or logo, not in a card, no
+title to read - which says whether a dark row is a discovery problem or a
+lookup one.
+
 Each stage fails for a different reason:
 
 - **No Prime tab found** - the tab was open before the extension was installed.
   Reload it; content scripts only attach on page load.
 - **`looked like tiles` is 0** - scroll so artwork is on screen and re-run. Still
   zero means tile discovery needs updating for the current markup.
+- **`recycled by the page`** - expected, and a sign it is working. Prime reuses
+  image elements as you scroll, so each one is re-read when its identity
+  changes.
 - **`hero banners skipped`** - expected. A halo around something spanning the
   whole viewport has no outside edges to show, so it draws as a bar across the
   page rather than a glow. Turn on `Glow the hero banner too` under Glow if you

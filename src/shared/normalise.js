@@ -165,6 +165,12 @@ export function recordKeys(primaryTitle, originalTitle) {
 
 /** Cache key for a resolved lookup. ASIN wins when we have one: it is stable. */
 export function cacheKey({ asin, title, year }) {
-  if (asin) return `asin:${asin}`;
-  return `t:${looseKey(title)}|y:${year ?? '-'}`;
+  const key = looseKey(title);
+  // The ASIN pins an entry to one storefront tile, which is what lets a remake
+  // be disambiguated once and then never again. The title stays in the key so
+  // that an ASIN which no longer describes what is on screen - a recycled tile,
+  // or one read from the wrong link in a card with several - cannot serve
+  // another film's rating.
+  if (asin) return `asin:${asin}|t:${key}`;
+  return `t:${key}|y:${year ?? '-'}`;
 }

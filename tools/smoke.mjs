@@ -199,6 +199,7 @@ try {
   // --- 3. Transport failures must not be cached as "no rating" -------------
   const failure = await optionsPage.evaluate(async () => {
     const { resolveOne, cache } = await import('/src/background/resolver.js');
+    const { cacheKey } = await import('/src/shared/normalise.js');
     const settings = {
       provider: 'omdb', omdbApiKey: 'test-key', omdbDailyLimit: 1000,
       cacheTtlDays: 30, negativeCacheTtlDays: 3, cacheMaxEntries: 500,
@@ -210,14 +211,18 @@ try {
       out.dropped = await resolveOne(
         { title: 'Connection Dropped Here', year: null, season: null, asin: 'BDROPPED01' }, settings,
       );
-      out.droppedCached = cache.entries.has('asin:BDROPPED01');
+      out.droppedCached = cache.entries.has(
+        cacheKey({ asin: 'BDROPPED01', title: 'Connection Dropped Here' }),
+      );
 
       window.fetch = async () =>
         new Response(JSON.stringify({ Response: 'False', Error: 'Movie not found!' }), { status: 200 });
       out.notFound = await resolveOne(
         { title: 'Genuinely Unknown Title', year: null, season: null, asin: 'BUNKNOWN01' }, settings,
       );
-      out.notFoundCached = cache.entries.has('asin:BUNKNOWN01');
+      out.notFoundCached = cache.entries.has(
+        cacheKey({ asin: 'BUNKNOWN01', title: 'Genuinely Unknown Title' }),
+      );
     } finally {
       window.fetch = real;
     }
@@ -228,15 +233,17 @@ try {
   // there was nowhere to look them up.
   const recovery = await optionsPage.evaluate(async () => {
     const { cache } = await import('/src/background/resolver.js');
+    const { cacheKey } = await import('/src/shared/normalise.js');
+    const key = cacheKey({ asin: 'BUNKNOWN01', title: 'Genuinely Unknown Title' });
     await cache.load();
     // Writes are debounced; make sure the miss has actually reached storage
     // before asking the worker to act on it.
     await cache.flush();
-    const before = cache.entries.has('asin:BUNKNOWN01');
+    const before = cache.entries.has(key);
     const reply = await chrome.runtime.sendMessage({ type: 'pvg:sources-changed' });
     // Observe the true contents, not this context's stale view.
     await cache.reload();
-    return { before, reply, after: cache.entries.has('asin:BUNKNOWN01') };
+    return { before, reply, after: cache.entries.has(key) };
   });
 
   console.log('\nfailure handling');
@@ -365,6 +372,38 @@ try {
 
   console.log('\nlazy loading');
   check('a tile added after load also glows', lateGlowed);
+
+  // --- Virtualised rows: the same <img>, given a new identity -------------
+  // Prime keeps a pool of image elements and rewrites their src and alt on
+  // scroll. The state attribute used to be a permanent tombstone, so a recycled
+  // element kept a stale glow - or never got one - however far you scrolled.
+  const recycling = await page.evaluate(() => {
+    // The hero uses the same alt text, and heroes are deliberately skipped.
+    const img = [...document.querySelectorAll('li img')].find((i) => i.alt === 'Dune');
+    if (!img) return { found: false };
+    const before = (img.closest('.pvg-tile') || img).dataset.pvgRating;
+    // A recycled card gets a new identity throughout: link and label together.
+    img.setAttribute('alt', 'The Godfather');
+    img.closest('a')?.setAttribute('href', '/detail/B09RECYCLED/ref=x');
+    return { found: true, before };
+  });
+
+  const reresolved = await page
+    .waitForFunction(
+      () => {
+        const img = [...document.querySelectorAll('li img')].find((i) => i.alt === 'The Godfather');
+        const card = img && (img.closest('.pvg-tile') || (img.classList.contains('pvg-tile') ? img : null));
+        return card?.dataset.pvgRating === '9.2';
+      },
+      null,
+      { timeout: 15000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+
+  console.log('\nvirtualised rows');
+  check('the recycled tile started with its own rating', recycling.before === '8.0', recycling.before);
+  check('a recycled tile picks up its new title', reresolved);
 
   // --- 5. Second visit should be served from cache ------------------------
   await page.goto('https://www.amazon.co.uk/gp/video/storefront?again=1');
